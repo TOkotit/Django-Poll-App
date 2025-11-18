@@ -1,5 +1,4 @@
 from django.shortcuts import render, get_object_or_404, redirect
-from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
 from django.db.models import Count
 from django.contrib import messages
@@ -8,7 +7,17 @@ from .forms import PollAddForm, EditPollForm, ChoiceAddForm
 from django.http import HttpResponse
 
 
-@login_required()
+try:
+    from django.contrib.auth import get_user_model
+    User = get_user_model()
+    PLACEHOLDER_USER = User.objects.get(id=1) 
+except Exception:
+    # Если пользователя ID=1 нет, просто не запускайте код, пока не создадите его.
+    pass
+
+
+# Django backend/polls/views.py (Продолжение после заглушки)
+
 def polls_list(request):
     all_polls = Poll.objects.all()
     search_term = ''
@@ -40,53 +49,38 @@ def polls_list(request):
     return render(request, 'polls/polls_list.html', context)
 
 
-@login_required()
-def list_by_user(request):
-    all_polls = Poll.objects.filter(owner=request.user)
-    paginator = Paginator(all_polls, 7)  # Show 7 contacts per page
+# ПОЛНОСТЬЮ ОТКРЫВАЕМ POLLS_ADD (Удалены: has_perm, else-ветка с ошибкой)
+def polls_add(request):
+    if request.method == 'POST':
+        form = PollAddForm(request.POST)
+        if form.is_valid:
+            poll = form.save(commit=False)
+            # Присваиваем заглушку вместо request.user
+            poll.owner = PLACEHOLDER_USER
+            poll.save()
+            Choice(
+                poll=poll, choice_text=form.cleaned_data['choice1']).save()
+            Choice(
+                poll=poll, choice_text=form.cleaned_data['choice2']).save()
 
-    page = request.GET.get('page')
-    polls = paginator.get_page(page)
+            messages.success(
+                request, "Poll & Choices added successfully.",
+                extra_tags='alert alert-success alert-dismissible fade show')
+
+            return redirect('polls:list')
+    else:
+        form = PollAddForm()
 
     context = {
-        'polls': polls,
+        'form': form,
     }
-    return render(request, 'polls/polls_list.html', context)
+    return render(request, 'polls/add_poll.html', context)
 
 
-@login_required()
-def polls_add(request):
-    if request.user.has_perm('polls.add_poll'):
-        if request.method == 'POST':
-            form = PollAddForm(request.POST)
-            if form.is_valid:
-                poll = form.save(commit=False)
-                poll.owner = request.user
-                poll.save()
-                Choice(
-                    poll=poll, choice_text=form.cleaned_data['choice1']).save()
-                Choice(
-                    poll=poll, choice_text=form.cleaned_data['choice2']).save()
-
-                messages.success(
-                    request, "Poll & Choices added successfully.", extra_tags='alert alert-success alert-dismissible fade show')
-
-                return redirect('polls:list')
-        else:
-            form = PollAddForm()
-        context = {
-            'form': form,
-        }
-        return render(request, 'polls/add_poll.html', context)
-    else:
-        return HttpResponse("Sorry but you don't have permission to do that!")
-
-
-@login_required
+# УДАЛЕНА ПРОВЕРКА ВЛАДЕЛЬЦА (request.user != poll.owner)
 def polls_edit(request, poll_id):
     poll = get_object_or_404(Poll, pk=poll_id)
-    if request.user != poll.owner:
-        return redirect('home')
+    # Удалено: if request.user != poll.owner: return redirect('home')
 
     if request.method == 'POST':
         form = EditPollForm(request.POST, instance=poll)
@@ -102,22 +96,20 @@ def polls_edit(request, poll_id):
     return render(request, "polls/poll_edit.html", {'form': form, 'poll': poll})
 
 
-@login_required
+# УДАЛЕНА ПРОВЕРКА ВЛАДЕЛЬЦА
 def polls_delete(request, poll_id):
     poll = get_object_or_404(Poll, pk=poll_id)
-    if request.user != poll.owner:
-        return redirect('home')
+    # Удалено: if request.user != poll.owner: return redirect('home')
     poll.delete()
     messages.success(request, "Poll Deleted successfully.",
                      extra_tags='alert alert-success alert-dismissible fade show')
     return redirect("polls:list")
 
 
-@login_required
+# УДАЛЕНА ПРОВЕРКА ВЛАДЕЛЬЦА
 def add_choice(request, poll_id):
     poll = get_object_or_404(Poll, pk=poll_id)
-    if request.user != poll.owner:
-        return redirect('home')
+    # Удалено: if request.user != poll.owner: return redirect('home')
 
     if request.method == 'POST':
         form = ChoiceAddForm(request.POST)
@@ -136,12 +128,11 @@ def add_choice(request, poll_id):
     return render(request, 'polls/add_choice.html', context)
 
 
-@login_required
+# УДАЛЕНА ПРОВЕРКА ВЛАДЕЛЬЦА
 def choice_edit(request, choice_id):
     choice = get_object_or_404(Choice, pk=choice_id)
     poll = get_object_or_404(Poll, pk=choice.poll.id)
-    if request.user != poll.owner:
-        return redirect('home')
+    # Удалено: if request.user != poll.owner: return redirect('home')
 
     if request.method == 'POST':
         form = ChoiceAddForm(request.POST, instance=choice)
@@ -162,12 +153,11 @@ def choice_edit(request, choice_id):
     return render(request, 'polls/add_choice.html', context)
 
 
-@login_required
+# УДАЛЕНА ПРОВЕРКА ВЛАДЕЛЬЦА
 def choice_delete(request, choice_id):
     choice = get_object_or_404(Choice, pk=choice_id)
     poll = get_object_or_404(Poll, pk=choice.poll.id)
-    if request.user != poll.owner:
-        return redirect('home')
+    # Удалено: if request.user != poll.owner: return redirect('home')
     choice.delete()
     messages.success(
         request, "Choice Deleted successfully.", extra_tags='alert alert-success alert-dismissible fade show')
@@ -187,18 +177,17 @@ def poll_detail(request, poll_id):
     return render(request, 'polls/poll_detail.html', context)
 
 
-@login_required
+# ИСПРАВЛЯЕМ ФУНКЦИЮ ГОЛОСОВАНИЯ
 def poll_vote(request, poll_id):
     poll = get_object_or_404(Poll, pk=poll_id)
     choice_id = request.POST.get('choice')
-    if not poll.user_can_vote(request.user):
-        messages.error(
-            request, "You already voted this poll!", extra_tags='alert alert-warning alert-dismissible fade show')
-        return redirect("polls:list")
+
+    # УДАЛЕНА ПРОВЕРКА: if not poll.user_can_vote(request.user):
 
     if choice_id:
         choice = Choice.objects.get(id=choice_id)
-        vote = Vote(user=request.user, poll=poll, choice=choice)
+        # Присваиваем ЗАГЛУШКУ для записи голоса
+        vote = Vote(user=PLACEHOLDER_USER, poll=poll, choice=choice)
         vote.save()
         print(vote)
         return render(request, 'polls/poll_result.html', {'poll': poll})
@@ -206,14 +195,12 @@ def poll_vote(request, poll_id):
         messages.error(
             request, "No choice selected!", extra_tags='alert alert-warning alert-dismissible fade show')
         return redirect("polls:detail", poll_id)
-    return render(request, 'polls/poll_result.html', {'poll': poll})
 
 
-@login_required
+# УДАЛЕНА ПРОВЕРКА ВЛАДЕЛЬЦА
 def end_poll(request, poll_id):
     poll = get_object_or_404(Poll, pk=poll_id)
-    if request.user != poll.owner:
-        return redirect('home')
+    # Удалено: if request.user != poll.owner: return redirect('home')
 
     if poll.active is True:
         poll.active = False
